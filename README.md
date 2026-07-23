@@ -1,4 +1,4 @@
-# Nail Studio — Telegram-бot для записи на маникюр
+# PickMe Nails  — Telegram-бot для записи на маникюр
 
 ## Структура проекта
 
