@@ -1,4 +1,4 @@
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 from aiogram import F, Router
 from aiogram.enums import ContentType
@@ -106,6 +106,12 @@ async def choose_date(callback: CallbackQuery, state: FSMContext) -> None:
 
     open_times = await db.get_available_times_for_date(chosen_date)
     busy_times = await db.get_busy_times(data["service_id"], chosen_date)
+
+    # Если выбранный день — это сегодня, фильтруем слоты времени, которые уже прошли
+    if chosen_date == date_type.today():
+        current_time_str = datetime.now().strftime("%H:%M") # Получаем текущее время сервера
+        open_times = [t for t in open_times if t > current_time_str] 
+
     free_slots = [t for t in open_times if t not in busy_times]
     if not free_slots:
         await callback.answer("На эту дату свободных слотов не осталось, выберите другую 🙏", show_alert=True)
