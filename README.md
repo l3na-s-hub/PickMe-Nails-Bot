@@ -24,33 +24,6 @@ nail_bot/
     └── admin.py              # /admin, управление услугами и записями
 ```
 
-## Установка
-
-```bash
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-## Настройка
-
-1. Скопируйте `.env.example` в `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Заполните переменные:
-   - `BOT_TOKEN` — токен от [@BotFather](https://t.me/BotFather)
-   - `ADMIN_IDS` — Telegram ID администраторов через запятую (узнать свой ID можно у [@userinfobot](https://t.me/userinfobot))
-   - `DB_URL` — по умолчанию используется SQLite, менять не обязательно
-
-## Запуск
-
-```bash
-python main.py
-```
-
-При первом запуске автоматически создастся файл базы данных и все таблицы.
-Услуги в базе изначально пусты — добавьте их через админ-панель (`/admin` → «➕ Добавить услугу»).
 
 ## Основные команды
 
