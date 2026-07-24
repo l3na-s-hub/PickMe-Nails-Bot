@@ -1,3 +1,4 @@
+import calendar
 from datetime import date as date_type
 from datetime import datetime
 
@@ -5,10 +6,14 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from aiogram.filters.callback_data import CallbackData
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 
 from config import config
 from database import requests as db
 from keyboards import admin_kb, client_kb
+from keyboards.admin_kb import ToggleSlotCallback
 from states.admin import AdminStates
 
 router = Router()
@@ -238,6 +243,26 @@ FIELD_PROMPTS = {
 }
 
 
+@router.callback_query(ToggleSlotCallback.filter())
+async def handle_toggle_slot(callback: CallbackQuery, callback_data: ToggleSlotCallback):
+    action = callback_data.action
+    date_str = callback_data.date_str
+    slot_time = callback_data.slot_time
+
+    if action == "open":
+        await db.add_available_slot(date_str, slot_time)
+        await callback.answer(f"Слот {slot_time} открыт")
+    elif action == "close":
+        await db.remove_available_slot(date_str, slot_time)
+        await callback.answer(f"Слот {slot_time} закрыт")
+
+    # Получаем актуальный список строк
+    updated_open_slots = await db.get_slots_for_date(date_str)
+    updated_keyboard = admin_kb.admin_edit_slots_kb(date_str, updated_open_slots)
+
+    await callback.message.edit_reply_markup(reply_markup=updated_keyboard)
+
+
 @router.message(F.text == "✏️ Редактировать услугу")
 async def edit_service_start(message: Message) -> None:
     services = await db.get_all_services()
@@ -314,12 +339,71 @@ async def edit_service_save_value(message: Message, state: FSMContext) -> None:
 # Расписание записи: мастер сам открывает дни/время
 # ---------------------------------------------------------------------------
 
+
+async def _render_schedule_days(callback: CallbackQuery, year: int, month: int):
+    # Генерируем дни выбранного месяца
+    num_days = calendar.monthrange(year, month)[1]
+    
+    builder = InlineKeyboardBuilder()
+    for day in range(1, num_days + 1):
+        # Форматируем дату в строку 'YYYY-MM-DD'
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        builder.button(text=str(day), callback_data=f"admin_pick_date:{date_str}")
+        
+    builder.adjust(5)  # По 5 дней в ряд
+    
+    await callback.message.edit_text(
+        text=f"🗓 <b>Выберите день в {admin_kb.RU_MONTHS[month]} {year}:</b>",
+        reply_markup=builder.as_markup()
+    )
+    await callback.answer()
+    
+
 @router.message(F.text == "🛠 Расписание записи")
 async def schedule_menu_start(message: Message) -> None:
+    # Вместо старого подменю сразу отправляем выбор месяца, но с другим префиксом
     await message.answer(
-        "Управление расписанием записи:",
-        reply_markup=admin_kb.schedule_menu_kb(),
+        "📅 Выберите месяц для настройки расписания:",
+        reply_markup=admin_kb.month_picker_kb(callback_prefix="sched_month")
     )
+
+
+# 2. Хэндлер, который срабатывает при выборе месяца из меню
+@router.callback_query(F.data.startswith("sched_month:"))
+async def schedule_month_select_day(callback: CallbackQuery):
+    year_str, month_str = callback.data.split(":")[1].split("-")
+    await _render_schedule_days(callback, int(year_str), int(month_str))
+
+
+@router.callback_query(F.data.startswith("admin_pick_date:"))
+async def show_slots_management(callback: CallbackQuery):
+    chosen_date_str = callback.data.split(":")[1] # Вытащили 'YYYY-MM-DD'
+    
+    # 1. Загружаем из базы то, что уже открыто на этот день
+    open_slots = await db.get_slots_for_date(chosen_date_str)
+    
+    # 2. Генерируем 30-минутную сетку со светофором
+    keyboard = admin_kb.admin_edit_slots_kb(chosen_date_str, open_slots)
+    
+    # Превратим для красоты YYYY-MM-DD в ДД.ММ.ГГГГ для текста
+    display_date = datetime.strptime(chosen_date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    
+    await callback.message.edit_text(
+        text=f"📅 <b>Управление слотами на {display_date}</b>\n\n"
+             f"🟢 — время открыто для клиентов\n"
+             f"🔴 — время закрыто",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back_to_dates:"))
+async def back_to_days_list(callback: CallbackQuery):
+    chosen_date_str = callback.data.split(":")[1]
+    dt = datetime.strptime(chosen_date_str, "%Y-%m-%d")
+    
+    # Просто вызываем функцию отрисовки с нужным годом и месяцем
+    await _render_schedule_days(callback, dt.year, dt.month)
 
 
 # --- Открытие одного дня -----------------------------------------------------
@@ -378,7 +462,7 @@ async def open_day_save(callback: CallbackQuery, state: FSMContext) -> None:
 
     parsed_date = date_type.fromisoformat(data["open_day_date"])
     for t in selected:
-        await db.add_available_slot(parsed_date, t)
+        await db.add_available_slot(parsed_date.isoformat(), t)
 
     await state.clear()
     await callback.message.edit_text(
@@ -496,7 +580,7 @@ async def remove_slot_confirm(callback: CallbackQuery) -> None:
         )
         return
 
-    await db.remove_available_slot(parsed_date, chosen_time)
+    await db.remove_available_slot(iso_date, chosen_time)
     remaining_times = await db.get_available_times_for_date(parsed_date)
     if remaining_times:
         await callback.message.edit_text(

@@ -2,7 +2,7 @@ import calendar
 from datetime import date as date_type
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, delete 
 from sqlalchemy.orm import selectinload
 
 from database.db_main import async_session
@@ -251,19 +251,41 @@ async def get_monthly_stats(year: int, month: int) -> dict:
 # не откроет её вручную (по одному дню или сразу на весь месяц).
 # ---------------------------------------------------------------------------
 
-async def add_available_slot(slot_date: date_type, slot_time: str) -> None:
-    """Открывает конкретное время в конкретный день. Дубликаты игнорируются."""
+
+async def get_slots_for_date(chosen_date_str: str) -> list[str]:
+    target_date = datetime.strptime(chosen_date_str, "%Y-%m-%d").date()
     async with async_session() as session:
-        result = await session.execute(
-            select(AvailableSlot).where(
-                AvailableSlot.slot_date == slot_date,
-                AvailableSlot.slot_time == slot_time,
-            )
+        query = select(AvailableSlot.slot_time).where(AvailableSlot.slot_date == target_date)
+        result = await session.execute(query)
+        return [row[0] for row in result.all()]
+
+# async def add_available_slot(slot_date: date_type, slot_time: str) -> None:
+#     """Открывает конкретное время в конкретный день. Дубликаты игнорируются."""
+#     async with async_session() as session:
+#         result = await session.execute(
+#             select(AvailableSlot).where(
+#                 AvailableSlot.slot_date == slot_date,
+#                 AvailableSlot.slot_time == slot_time,
+#             )
+#         )
+#         if result.scalar_one_or_none() is not None:
+#             return
+#         session.add(AvailableSlot(slot_date=slot_date, slot_time=slot_time))
+#         await session.commit()
+
+
+async def add_available_slot(chosen_date_str: str, slot_time: str) -> None:
+    target_date = datetime.strptime(chosen_date_str, "%Y-%m-%d").date()
+    async with async_session() as session:
+        check_query = select(AvailableSlot).where(
+            AvailableSlot.slot_date == target_date,
+            AvailableSlot.slot_time == slot_time
         )
-        if result.scalar_one_or_none() is not None:
-            return
-        session.add(AvailableSlot(slot_date=slot_date, slot_time=slot_time))
-        await session.commit()
+        exists = await session.execute(check_query)
+        if exists.scalar_one_or_none() is None:
+            new_slot = AvailableSlot(slot_date=target_date, slot_time=slot_time)
+            session.add(new_slot)
+            await session.commit()
 
 
 async def open_month_bulk(year: int, month: int, times: list[str]) -> int:
@@ -303,20 +325,31 @@ async def open_month_bulk(year: int, month: int, times: list[str]) -> int:
         return days_affected
 
 
-async def remove_available_slot(slot_date: date_type, slot_time: str) -> bool:
+# async def remove_available_slot(slot_date: date_type, slot_time: str) -> bool:
+#     async with async_session() as session:
+#         result = await session.execute(
+#             select(AvailableSlot).where(
+#                 AvailableSlot.slot_date == slot_date,
+#                 AvailableSlot.slot_time == slot_time,
+#             )
+#         )
+#         slot = result.scalar_one_or_none()
+#         if slot is None:
+#             return False
+#         await session.delete(slot)
+#         await session.commit()
+#         return True
+
+
+async def remove_available_slot(chosen_date_str: str, slot_time: str) -> None:
+    target_date = datetime.strptime(chosen_date_str, "%Y-%m-%d").date()
     async with async_session() as session:
-        result = await session.execute(
-            select(AvailableSlot).where(
-                AvailableSlot.slot_date == slot_date,
-                AvailableSlot.slot_time == slot_time,
-            )
+        query = delete(AvailableSlot).where(
+            AvailableSlot.slot_date == target_date,
+            AvailableSlot.slot_time == slot_time
         )
-        slot = result.scalar_one_or_none()
-        if slot is None:
-            return False
-        await session.delete(slot)
+        await session.execute(query)
         await session.commit()
-        return True
 
 
 async def remove_day_entirely(slot_date: date_type) -> int:

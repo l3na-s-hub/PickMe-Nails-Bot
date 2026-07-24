@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Sequence
 
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
-
+from aiogram.filters.callback_data import CallbackData
 from database.models import Service
+
 
 RU_MONTHS = [
     "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -18,6 +19,11 @@ EDIT_FIELDS = [
     ("duration_minutes", "Длительность"),
 ]
 
+
+class ToggleSlotCallback(CallbackData, prefix="ts", sep="#"):
+    action: str        # 'open' или 'close'
+    date_str: str      # 'YYYY-MM-DD'
+    slot_time: str     # 'HH:MM'
 
 def admin_menu_kb() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
@@ -118,4 +124,55 @@ def day_slots_manage_kb(date_iso: str, times: Sequence[str]) -> InlineKeyboardMa
         builder.button(text=f"🗑 {t}", callback_data=f"remove_slot:{date_iso}:{t}")
     builder.button(text="🗑 Удалить весь день", callback_data=f"remove_day:{date_iso}")
     builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def generate_working_hours() -> list[str]:
+    """
+    Генерирует список времени с 08:00 до 22:00 с шагом 30 минут.
+    Выдаст: ['08:00', '08:30', '09:00', ..., '22:00']
+    """
+    start_time = datetime.strptime("08:00", "%H:%M")
+    end_time = datetime.strptime("22:00", "%H:%M")
+    current = start_time
+    
+    hours = []
+    while current <= end_time:
+        hours.append(current.strftime("%H:%M"))
+        current += timedelta(minutes=30)
+        
+    return hours
+
+
+def admin_edit_slots_kb(chosen_date_str: str, open_slots: list[str]) -> InlineKeyboardMarkup:
+    """
+    Строит сетку кнопок-переключателей (по 4 в ряд).
+    open_slots — это список строк времени, которые СЕЙЧАС ОТКРЫТЫ в базе (из requests.py)
+    """
+    builder = InlineKeyboardBuilder()
+    all_hours = generate_working_hours()
+    
+    for slot_time in all_hours:
+        # Проверяем, открыт ли этот слот в базе данных
+        if slot_time in open_slots:
+            # Слот открыт -> горит зеленым. Нажатие должно его ЗАКРЫТЬ (close)
+            text = f"🟢 {slot_time}"
+            action = "close"
+        else:
+            # Слот закрыт -> горит красным. Нажатие должно его ОТКРЫТЬ (open)
+            text = f"🔴 {slot_time}"
+            action = "open"
+            
+        # Формируем callback_data. 
+        # Передаем действие (open/close), дату и само время, чтобы хэндлер понял, что менять.
+        # Пример: "ts:open:2026-07-24:08:30" (ts - toggle slot)
+        callback_data = ToggleSlotCallback(action=action, date_str=chosen_date_str, slot_time=slot_time).pack()        
+        builder.add(InlineKeyboardButton(text=text, callback_data=callback_data))
+        
+    # Размещаем кнопки по 4 штуки в ряд для компактности
+    builder.adjust(4)
+    
+    # Добавим кнопку "Назад" в самый конец, чтобы админ мог вернуться к выбору дат
+    builder.row(InlineKeyboardButton(text="⬅️ Назад к датам", callback_data=f"back_to_dates:{chosen_date_str}"))
+    
     return builder.as_markup()
