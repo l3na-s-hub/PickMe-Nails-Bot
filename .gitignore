@@ -5,3 +5,4 @@ __pycache__/
 venv/
 .venv/
 .README.md
+.nail_bot.db

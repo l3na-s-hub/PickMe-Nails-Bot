@@ -406,6 +406,38 @@ async def back_to_days_list(callback: CallbackQuery):
     await _render_schedule_days(callback, dt.year, dt.month)
 
 
+@router.message(F.text == "📅 Расписание на месяц")
+async def process_view_monthly_schedule(message: Message):
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    
+    # Получаем сгруппированные свободные слоты из БД
+    schedule_dict = await db.get_free_slots_for_month(year, month)
+    
+    if not schedule_dict:
+        await message.answer(f"Свободных окон на {month:02d}.{year} нет.")
+        return
+        
+    # Формируем заголовок
+    lines = [f"Свободные окна на {month:02d}.{year}:\n"]
+    
+    # Собираем строки вида "21.08 - 12:30, 14:00, 16:00"
+    for d, times in schedule_dict.items():
+        date_str = d.strftime("%d.%m")
+        times_str = ", ".join(times)
+        lines.append(f"{date_str} - {times_str}")
+        
+    text = "\n".join(lines)
+    
+    # Защита от лимита символов в Telegram (макс. 4096)
+    if len(text) > 4000:
+        for i in range(0, len(text), 4000):
+            await message.answer(text[i:i+4000])
+    else:
+        await message.answer(text)
+
+
 # --- Открытие одного дня -----------------------------------------------------
 
 @router.callback_query(F.data == "sched_open_day")

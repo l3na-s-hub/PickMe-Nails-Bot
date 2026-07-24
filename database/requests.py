@@ -2,7 +2,7 @@ import calendar
 from datetime import date as date_type
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, delete 
+from sqlalchemy import and_, not_, select, delete 
 from sqlalchemy.orm import selectinload
 
 from database.db_main import async_session
@@ -111,6 +111,45 @@ async def delete_service(service_id: int) -> bool:
 # ---------------------------------------------------------------------------
 # Записи (Booking)
 # ---------------------------------------------------------------------------
+
+
+async def get_free_slots_for_month(target_year: int, target_month: int) -> dict[date_type, list[str]]:
+    """
+    Возвращает словарь со свободными окнами в указанном месяце.
+    Формат: {datetime.date(2026, 7, 21): ['12:30', '14:00', '16:00'], ...}
+    """
+    async with async_session() as session:
+        # Подзапрос: ищем подтвержденные брони для конкретной даты и времени
+        booked_exists = select(Booking).where(
+            and_(
+                Booking.booking_date == AvailableSlot.slot_date,
+                Booking.booking_time == AvailableSlot.slot_time,
+                Booking.status == "confirmed" # учитываем только активные записи
+            )
+        ).exists()
+
+        # Основной запрос: берем слоты, которых нет в подтвержденных бронях
+        # и которые больше или равны сегодняшнему дню
+        query = select(AvailableSlot).where(
+            and_(
+                AvailableSlot.slot_date >= date_type.today(),
+                not_(booked_exists)
+            )
+        ).order_by(AvailableSlot.slot_date, AvailableSlot.slot_time)
+
+        result = await session.execute(query)
+        slots = result.scalars().all()
+
+        # Группируем по датам, отфильтровывая нужный месяц и год
+        schedule = {}
+        for slot in slots:
+            if slot.slot_date.year == target_year and slot.slot_date.month == target_month:
+                if slot.slot_date not in schedule:
+                    schedule[slot.slot_date] = []
+                schedule[slot.slot_date].append(slot.slot_time)
+
+        return schedule
+    
 
 async def get_busy_times(service_id: int, booking_date: date_type) -> list[str]:
     """Возвращает список уже занятых временных слотов на указанную дату."""

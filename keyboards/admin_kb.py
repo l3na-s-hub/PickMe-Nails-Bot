@@ -24,12 +24,14 @@ class ToggleSlotCallback(CallbackData, prefix="ts", sep="#"):
     action: str        # 'open' или 'close'
     date_str: str      # 'YYYY-MM-DD'
     slot_time: str     # 'HH:MM'
+    
 
 def admin_menu_kb() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text="📅 Записи на сегодня")
     builder.button(text="🗓 Записи за месяц")
     builder.button(text="📊 Статистика за месяц")
+    builder.button(text="📅 Расписание на месяц")
     builder.button(text="➕ Добавить услугу")
     builder.button(text="✏️ Редактировать услугу")
     builder.button(text="❌ Удалить услугу")
