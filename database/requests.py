@@ -284,6 +284,36 @@ async def get_monthly_stats(year: int, month: int) -> dict:
     return {"total_bookings": total_bookings, "total_revenue": total_revenue}
 
 
+async def get_free_dates_set(target_year: int, target_month: int) -> set[date_type]:
+    """
+    Возвращает множество дат (set[date]), на которые есть хотя бы один свободный слот в указанном месяце.
+    """
+    async with async_session() as session:
+        booked_exists = select(Booking).where(
+            and_(
+                Booking.booking_date == AvailableSlot.slot_date,
+                Booking.booking_time == AvailableSlot.slot_time,
+                Booking.status == "confirmed"
+            )
+        ).exists()
+
+        query = select(AvailableSlot.slot_date).where(
+            and_(
+                AvailableSlot.slot_date >= date_type.today(),
+                not_(booked_exists)
+            )
+        ).distinct()
+
+        result = await session.execute(query)
+        all_free_dates = result.scalars().all()
+
+        # Фильтруем только нужный месяц и год и возвращаем как set для быстрого поиска
+        return {
+            d for d in all_free_dates 
+            if d.year == target_year and d.month == target_month
+        }
+
+
 # ---------------------------------------------------------------------------
 # Расписание: мастер сам открывает дни и время для записи (allow-list).
 # Изначально таблица пуста - ни одной даты клиенты не видят, пока мастер

@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime, timedelta
 from typing import Sequence
 
@@ -177,4 +178,39 @@ def admin_edit_slots_kb(chosen_date_str: str, open_slots: list[str]) -> InlineKe
     # Добавим кнопку "Назад" в самый конец, чтобы админ мог вернуться к выбору дат
     builder.row(InlineKeyboardButton(text="⬅️ Назад к датам", callback_data=f"back_to_dates:{chosen_date_str}"))
     
+    return builder.as_markup()
+
+def get_monthly_calendar_kb(year: int, month: int, free_dates: set[date]) -> InlineKeyboardMarkup:
+    """
+    Генерирует инлайн-календарь в виде сетки дней недели.
+    """
+    builder = InlineKeyboardBuilder()
+    
+    # Шапка: дни недели (Пн - Вс)
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    for day in weekdays:
+        builder.add(InlineKeyboardButton(text=day, callback_data="ignore"))
+    
+    # Матрица месяца (недели от Пн до Вс)
+    cal = calendar.monthcalendar(year, month)
+    
+    for week in cal:
+        for day in week:
+            if day == 0:
+                builder.add(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                current_date = date(year, month, day)
+                
+                # Если на этот день есть свободные окна — подсвечиваем зелёным
+                if current_date in free_dates:
+                    text = f"🟢 {day}"
+                    callback_data = f"admin_date_{current_date.isoformat()}"
+                else:
+                    text = str(day)
+                    callback_data = "ignore"
+                    
+                builder.add(InlineKeyboardButton(text=text, callback_data=callback_data))
+                
+    # Ровно 7 колонок для сетки недели
+    builder.adjust(7, repeat=True)
     return builder.as_markup()

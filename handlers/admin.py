@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardButton
 from config import config
 from database import requests as db
 from keyboards import admin_kb, client_kb
-from keyboards.admin_kb import ToggleSlotCallback
+from keyboards.admin_kb import ToggleSlotCallback, get_monthly_calendar_kb
 from states.admin import AdminStates
 
 router = Router()
@@ -412,31 +412,36 @@ async def process_view_monthly_schedule(message: Message):
     year = now.year
     month = now.month
     
-    # Получаем сгруппированные свободные слоты из БД
-    schedule_dict = await db.get_free_slots_for_month(year, month)
+    months_names = {
+        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+    }
     
-    if not schedule_dict:
-        await message.answer(f"Свободных окон на {month:02d}.{year} нет.")
-        return
-        
-    # Формируем заголовок
-    lines = [f"Свободные окна на {month:02d}.{year}:\n"]
+    free_dates = await db.get_free_dates_set(year, month)
+    keyboard = get_monthly_calendar_kb(year, month, free_dates)
     
-    # Собираем строки вида "21.08 - 12:30, 14:00, 16:00"
-    for d, times in schedule_dict.items():
-        date_str = d.strftime("%d.%m")
-        times_str = ", ".join(times)
-        lines.append(f"{date_str} - {times_str}")
-        
-    text = "\n".join(lines)
-    
-    # Защита от лимита символов в Telegram (макс. 4096)
-    if len(text) > 4000:
-        for i in range(0, len(text), 4000):
-            await message.answer(text[i:i+4000])
-    else:
-        await message.answer(text)
+    await message.answer(
+        f"📅 <b>Календарь свободных окон на {months_names.get(month, '')} {year}</b>\n\n"
+        "Дни со свободными окошками отмечены зелёным кружком 🟢. Нажми на день, чтобы посмотреть детали.",
+        reply_markup=keyboard
+    )
 
+
+@router.callback_query(F.data == "ignore")
+async def process_ignore_callback(callback: CallbackQuery):
+    await callback.answer("На эту дату нет свободных окон", show_alert=False)
+
+@router.callback_query(F.data.startswith("admin_date_"))
+async def process_select_date_callback(callback: CallbackQuery):
+    date_str = callback.data.split("_")[2]
+    selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    
+    await callback.message.edit_text(
+        f"📅 Вы выбрали дату: <b>{selected_date.strftime('%d.%m.%Y')}</b>\n\n"
+        f"Здесь можно отобразить список времени для этой даты."
+    )
+    await callback.answer()
 
 # --- Открытие одного дня -----------------------------------------------------
 
