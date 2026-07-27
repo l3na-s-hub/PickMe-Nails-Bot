@@ -1,5 +1,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import pytz
+from datetime import datetime
 
 
 class Settings(BaseSettings):
@@ -13,10 +15,12 @@ class Settings(BaseSettings):
     )
 
     # Фото для приветственного сообщения и для списка услуг.
-    # Можно указать прямую ссылку (https://...) либо file_id уже загруженной в Telegram картинки.
-    # Если оставить пустым - бот отправит обычное текстовое сообщение без фото.
     welcome_photo_url: str = Field(default="", validation_alias="WELCOME_PHOTO_URL")
     services_photo_url: str = Field(default="", validation_alias="SERVICES_PHOTO_URL")
+    about_photo_url: str = Field(default="", validation_alias="ABOUT_PHOTO_URL")
+    
+    # Часовой пояс для напоминаний (по умолчанию Москва)
+    timezone: str = Field(default="Asia/Yekaterinburg", validation_alias="TIMEZONE")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -28,6 +32,15 @@ class Settings(BaseSettings):
     def admin_ids(self) -> list[int]:
         """Список Telegram ID администраторов."""
         return [int(item.strip()) for item in self.admin_ids_raw.split(",") if item.strip()]
+    
+    @property
+    def tz(self):
+        """Получить объект часового пояса."""
+        return pytz.timezone(self.timezone)
+    
+    def now(self) -> datetime:
+        """Текущее время в заданном часовом поясе."""
+        return datetime.now(self.tz)
 
 
 config = Settings()

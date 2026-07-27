@@ -505,38 +505,53 @@ async def get_bookings_needing_reminder(hours_before: int = 2) -> list[Booking]:
     """
     Подтверждённые записи, которые начнутся в ближайшие `hours_before` часов
     и по которым напоминание ещё не отправлялось.
+    
+    Исправлено: теперь учитывает часовой пояс из конфига.
     """
-    now = datetime.now()
-    window_end = now + timedelta(hours=hours_before)
-
+    from config import config
+    
+    # Используем текущее время в правильном часовом поясе
+    now = config.now()
+    
+    # Вычисляем окно для напоминаний с буфером в 30 минут
+    # (чтобы учесть 15-минутный интервал планировщика)
+    buffer_minutes = 30
+    
     async with async_session() as session:
-        result = await session.execute(
+        # Загружаем все подтвержденные записи без напоминания
+        query = (
             select(Booking)
             .options(selectinload(Booking.user), selectinload(Booking.service))
             .where(
                 Booking.status == "confirmed",
-                Booking.reminder_sent.is_(False),
-                Booking.booking_date >= now.date(),
-                Booking.booking_date <= window_end.date(),
+                Booking.reminder_sent == False,
+                # Берем записи от сегодня-1 день до сегодня+2 дня
+                # чтобы не пропустить завтрашние записи
+                Booking.booking_date >= (now.date() - timedelta(days=1)),
+                Booking.booking_date <= (now.date() + timedelta(days=2)),
             )
+            .order_by(Booking.booking_date, Booking.booking_time)
         )
-        bookings = list(result.scalars().all())
-
-    due_bookings = []
-    for booking in bookings:
-        booking_dt = datetime.combine(
-            booking.booking_date,
-            datetime.strptime(booking.booking_time, "%H:%M").time(),
-        )
-        if now <= booking_dt <= window_end:
-            due_bookings.append(booking)
-    return due_bookings
-
-
-async def mark_reminder_sent(booking_id: int) -> None:
-    async with async_session() as session:
-        result = await session.execute(select(Booking).where(Booking.id == booking_id))
-        booking = result.scalar_one_or_none()
-        if booking is not None:
-            booking.reminder_sent = True
-            await session.commit()
+        
+        result = await session.execute(query)
+        all_bookings = list(result.scalars().all())
+        
+        due_bookings = []
+        
+        for booking in all_bookings:
+            # Преобразуем время записи в datetime с учетом часового пояса
+            booking_time = datetime.strptime(booking.booking_time, "%H:%M").time()
+            booking_datetime = datetime.combine(booking.booking_date, booking_time)
+            booking_datetime = config.tz.localize(booking_datetime)
+            
+            # Время, когда должно прийти напоминание (за hours_before часов до записи)
+            reminder_time = booking_datetime - timedelta(hours=hours_before)
+            
+            # Разница между сейчас и временем напоминания в минутах
+            time_diff = (now - reminder_time).total_seconds() / 60
+            
+            # Проверяем, что сейчас в окне отправки (±buffer_minutes минут)
+            if abs(time_diff) <= buffer_minutes:
+                due_bookings.append(booking)
+        
+        return due_bookings

@@ -19,7 +19,9 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
     builder.button(text="📋 Мои записи")
     builder.button(text="💰 Цены и услуги")
     builder.button(text="📞 Контакты")
-    builder.adjust(2, 2)
+    builder.button(text="ℹ️ Обо мне")  
+    builder.button(text="📋 Памятка для клиентов")  
+    builder.adjust(2, 2, 2) 
     return builder.as_markup(resize_keyboard=True)
 
 
