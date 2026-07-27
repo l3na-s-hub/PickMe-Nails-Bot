@@ -341,20 +341,27 @@ async def edit_service_save_value(message: Message, state: FSMContext) -> None:
 
 
 async def _render_schedule_days(callback: CallbackQuery, year: int, month: int):
-    # Генерируем дни выбранного месяца
-    num_days = calendar.monthrange(year, month)[1]
+    """Показывает календарь дней выбранного месяца."""
+    # Получаем даты, у которых есть открытые слоты
+    open_dates = set()
+    async with db.async_session() as session:
+        from sqlalchemy import select
+        from database.models import AvailableSlot
+        query = select(AvailableSlot.slot_date).where(
+            AvailableSlot.slot_date >= date_type(year, month, 1),
+            AvailableSlot.slot_date <= date_type(year, month, calendar.monthrange(year, month)[1])
+        ).distinct()
+        result = await session.execute(query)
+        open_dates = set(result.scalars().all())
     
-    builder = InlineKeyboardBuilder()
-    for day in range(1, num_days + 1):
-        # Форматируем дату в строку 'YYYY-MM-DD'
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        builder.button(text=str(day), callback_data=f"admin_pick_date:{date_str}")
-        
-    builder.adjust(5)  # По 5 дней в ряд
+    keyboard = admin_kb.get_days_calendar_kb(year, month, open_dates)
     
     await callback.message.edit_text(
-        text=f"🗓 <b>Выберите день в {admin_kb.RU_MONTHS[month]} {year}:</b>",
-        reply_markup=builder.as_markup()
+        f"📅 <b>{admin_kb.RU_MONTHS[month]} {year}</b>\n\n"
+        "🟢 — день открыт для записи\n"
+        "🔴 — день закрыт\n\n"
+        "Нажмите на день для управления слотами",
+        reply_markup=keyboard
     )
     await callback.answer()
     

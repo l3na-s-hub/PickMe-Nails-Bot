@@ -244,3 +244,36 @@ def get_monthly_calendar_kb(year: int, month: int, free_dates: set[date]) -> Inl
     # Ровно 7 колонок для сетки недели
     builder.adjust(7, repeat=True)
     return builder.as_markup()
+
+
+def get_days_calendar_kb(year: int, month: int, open_dates: set[date]) -> InlineKeyboardMarkup:
+    """
+    Генерирует календарь дней месяца (Пн-Вс).
+    open_dates - множество дат, у которых есть открытые слоты.
+    """
+    builder = InlineKeyboardBuilder()
+    
+    # Шапка: дни недели
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    for day in weekdays:
+        builder.add(InlineKeyboardButton(text=day, callback_data="ignore"))
+    
+    # Матрица месяца
+    cal = calendar.monthcalendar(year, month)
+    
+    for week in cal:
+        for day in week:
+            if day == 0:
+                builder.add(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                current_date = date(year, month, day)
+                # Если есть открытые слоты - зеленый, иначе красный
+                if current_date in open_dates:
+                    text = f"🟢 {day}"
+                else:
+                    text = f"🔴 {day}"
+                callback_data = f"admin_pick_date:{year}-{month:02d}-{day:02d}"
+                builder.add(InlineKeyboardButton(text=text, callback_data=callback_data))
+    
+    builder.adjust(7)
+    return builder.as_markup()
