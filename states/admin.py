@@ -8,12 +8,13 @@ class AdminStates(StatesGroup):
     adding_price = State()
     adding_duration = State()
 
-    # Редактирование существующей услуги (ожидание нового значения выбранного поля)
+    # Редактирование услуги
     editing_value = State()
 
-    # Открытие одного дня для записи: ждём дату текстом, затем ждём переключения времени
+    # Открытие расписания
     opening_day_input = State()
     opening_day_toggle = State()
-
-    # Открытие целого месяца для записи: после выбора месяца ждём переключения времени
     opening_month_toggle = State()
+
+    # Редактирование контента
+    editing_content = State()  # <-- НОВОЕ СОСТОЯНИЕ

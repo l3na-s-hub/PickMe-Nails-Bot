@@ -6,7 +6,7 @@ from sqlalchemy import and_, not_, select, delete
 from sqlalchemy.orm import selectinload
 
 from database.db_main import async_session
-from database.models import AvailableSlot, Booking, Service, User
+from database.models import AvailableSlot, Booking, Content, Service, User
 
 
 # ---------------------------------------------------------------------------
@@ -555,3 +555,101 @@ async def get_bookings_needing_reminder(hours_before: int = 2) -> list[Booking]:
                 due_bookings.append(booking)
         
         return due_bookings
+
+
+# ---------------------------------------------------------------------------
+# Редактирование контента админом для клиента
+# ---------------------------------------------------------------------------
+
+
+async def get_content(key: str) -> str | None:
+    """Получить контент по ключу."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Content.value).where(Content.key == key)
+        )
+        return result.scalar_one_or_none()
+
+
+async def update_content(key: str, value: str, updated_by: str | None = None) -> None:
+    """Обновить или создать контент."""
+    async with async_session() as session:
+        result = await session.execute(select(Content).where(Content.key == key))
+        content = result.scalar_one_or_none()
+        
+        if content is None:
+            content = Content(key=key, value=value, updated_by=updated_by)
+            session.add(content)
+        else:
+            content.value = value
+            content.updated_by = updated_by
+        
+        await session.commit()
+
+
+async def init_default_content() -> None:
+    """Заполняет БД стандартными текстами при первом запуске."""
+    default_content = {
+        "contacts": (
+            "<b>📍 Мои контакты:</b>\n\n"
+            "📍 <b>Адрес:</b> г. Екатеринбург, ул. Куйбышева, д. 139\n"
+            "📱 <b>Телефон:</b> +7 (992) 331-99-36\n"
+            "💬 <b>Telegram:</b> @mc_yzbek\n\n"
+            "Пилим ногти, а не мужиков 💅"
+        ),
+        "about": (
+            "👋 <b>Всем привет! Я Катя</b>\n\n"
+            "Я мастер креативного маникюра в Екатеринбурге и хочу немножко рассказать о себе 🌟\n\n"
+            "✨ Я люблю создавать <b>объемные ногти</b> и <b>цветастые дизайны</b>\n"
+            "🎨 Моя сильная сторона — это <b>текстуры</b> и <b>дизайны с объемами</b>\n"
+            "💡 Обожаю работать с <b>мудбордами</b> и <b>инспо</b>\n\n"
+            "⚠️ Но если вдруг вы хотите рисунки на ногтях, то, к сожалению, это не про меня.\n"
+            "Из рисунков не умею делать что-то из ряда вон выходящее.\n\n"
+            "💖 Давайте создавать новое и красивое на ваших ручках!"
+        ),
+        "memo": (
+            "📋 <b>Памятка для клиентов</b> 🤍\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "🛡 <b>Безопасность и здоровье</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Перед визитом обязательно сообщи мастеру, если у тебя есть:\n\n"
+            "🦠 <b>Инфекции кожи и ногтей:</b>\n"
+            "грибок, бактериальные или вирусные заболевания (например, герпес)\n\n"
+            "⚠️ <b>Аллергии:</b>\n"
+            "особенно на материалы для наращивания, гель-лаки, акрил, "
+            "а также на анестезирующие средства\n\n"
+            "🩹 <b>Повреждения кожи:</b>\n"
+            "порезы, ссадины, воспаления, ожоги, псориаз, экзема, "
+            "бородавки в зоне маникюра\n\n"
+            "Эти сведения помогут мастеру выбрать безопасные материалы "
+            "и технику работы, а также предотвратить осложнения.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "📝 <b>Что важно сообщить при записи</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "📐 <b>Желаемая длина и форма ногтей:</b>\n"
+            "квадрат, миндаль, овал и др.\n\n"
+            "💅 <b>Тип покрытия:</b>\n"
+            "наращивание, укрепление на свои ноготки\n\n"
+            "🎨 <b>Тип дизайна:</b>\n"
+            "мудборд, инспо, фото референца (фотки с Pinterest)\n\n"
+            "🔬 <b>Состояние ногтей:</b>\n"
+            "ломкость, расслоение, тонкая ногтевая пластина\n\n"
+            "🤧 <b>Наличие аллергии:</b>\n"
+            "особенно на акрил, гель-лаки, праймеры\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <b>Дополнительные советы</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "✨ Регулярно ухаживай за кутикулой дома\n\n"
+            "🗣 Если чувствуешь дискомфорт во время процедуры — "
+            "сразу скажи мастеру!\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "💖 Все эти правила помогают оставаться в доверительных "
+            "отношениях с мастером и сохранить свою безопасность "
+            "и безопасность мастера!"
+        ),
+    }
+    
+    for key, value in default_content.items():
+        existing = await get_content(key)
+        if existing is None:
+            await update_content(key, value, updated_by="system")

@@ -33,13 +33,43 @@ def admin_menu_kb() -> ReplyKeyboardMarkup:
     builder.button(text="🗓 Записи за месяц")
     builder.button(text="📊 Статистика за месяц")
     builder.button(text="📅 Расписание на месяц")
-    builder.button(text="➕ Добавить услугу")
-    builder.button(text="✏️ Редактировать услугу")
-    builder.button(text="❌ Удалить услугу")
     builder.button(text="🛠 Расписание записи")
+    builder.button(text="➕ Добавить услугу")
+    builder.button(text="❌ Удалить услугу")
+    builder.button(text="✏️ Редактировать услугу")
+    builder.button(text="📝 Управление контентом")
     builder.button(text="🔙 Выйти из админки")
-    builder.adjust(2, 2, 2, 2)
+    builder.adjust(3, 2, 2)
     return builder.as_markup(resize_keyboard=True)
+
+
+def content_menu_kb() -> InlineKeyboardMarkup:
+    """Меню выбора раздела для редактирования."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📞 Контакты", callback_data="edit_content:contacts")
+    builder.button(text="ℹ️ Обо мне", callback_data="edit_content:about")
+    builder.button(text="📋 Памятка для клиентов", callback_data="edit_content:memo")
+    builder.button(text="⬅️ Назад в админку", callback_data="back_to_admin")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def content_preview_kb(content_key: str) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра и редактирования раздела."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Редактировать текст", callback_data=f"content_edit:{content_key}")
+    builder.button(text="🔄 Сбросить к стандартному", callback_data=f"content_reset:{content_key}")
+    builder.button(text="⬅️ Назад к списку", callback_data="back_to_content_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def content_edit_kb(content_key: str) -> InlineKeyboardMarkup:
+    """Клавиатура во время редактирования."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отменить", callback_data=f"content_cancel:{content_key}")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 def admin_services_delete_kb(services: Sequence[Service]) -> InlineKeyboardMarkup:

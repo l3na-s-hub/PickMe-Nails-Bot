@@ -651,3 +651,262 @@ async def remove_day_confirm(callback: CallbackQuery) -> None:
         f"✅ День {parsed_date.strftime('%d.%m.%Y')} закрыт для записи (удалено слотов: {removed_count})."
     )
     await callback.answer()
+
+
+# ---------------------------------------------------------------------------
+# Управление контентом (Контакты, Обо мне, Памятка)
+# ---------------------------------------------------------------------------
+
+@router.message(F.text == "📝 Управление контентом")
+async def content_management_start(message: Message) -> None:
+    """Показывает меню управления контентом."""
+    await message.answer(
+        "📝 <b>Управление контентом</b>\n\n"
+        "Выберите раздел для просмотра или редактирования:",
+        reply_markup=admin_kb.content_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "back_to_content_menu")
+async def back_to_content_menu(callback: CallbackQuery) -> None:
+    """Возврат в меню управления контентом."""
+    await callback.message.edit_text(
+        "📝 <b>Управление контентом</b>\n\n"
+        "Выберите раздел для просмотра или редактирования:",
+        reply_markup=admin_kb.content_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_admin")
+async def back_to_admin_menu(callback: CallbackQuery) -> None:
+    """Возврат в главное меню админа."""
+    await callback.message.delete()
+    await callback.message.answer(
+        "🔧 <b>Панель администратора</b>",
+        reply_markup=admin_kb.admin_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit_content:"))
+async def preview_content(callback: CallbackQuery) -> None:
+    """Показывает текущий текст раздела."""
+    content_key = callback.data.split(":")[1]
+    
+    content_value = await db.get_content(content_key)
+    
+    if not content_value:
+        await callback.answer("Контент не найден", show_alert=True)
+        return
+    
+    content_names = {
+        "contacts": "📞 Контакты",
+        "about": "ℹ️ Обо мне",
+        "memo": "📋 Памятка для клиентов",
+    }
+    
+    preview_text = (
+        f"📄 <b>{content_names.get(content_key, content_key)}</b>\n\n"
+        f"{content_value}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "⬇️ Выберите действие:"
+    )
+    
+    await callback.message.edit_text(
+        preview_text,
+        reply_markup=admin_kb.content_preview_kb(content_key),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("content_edit:"))
+async def start_edit_content(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начинает процесс редактирования контента."""
+    from states.admin import AdminStates
+    
+    content_key = callback.data.split(":")[1]
+    
+    await state.update_data(content_key=content_key)
+    await state.set_state(AdminStates.editing_content)
+    
+    current_content = await db.get_content(content_key) or ""
+    
+    content_names = {
+        "contacts": "📞 Контакты",
+        "about": "ℹ️ Обо мне",
+        "memo": "📋 Памятка для клиентов",
+    }
+    
+    await callback.message.edit_text(
+        f"✏️ <b>Редактирование: {content_names.get(content_key, content_key)}</b>\n\n"
+        "📝 Отправьте новый текст в следующем сообщении.\n"
+        "Поддерживается HTML-разметка (<b>жирный</b>, <i>курсив</i>, и т.д.)\n\n"
+        "🔍 <b>Текущий текст:</b>\n"
+        f"{current_content[:300]}{'...' if len(current_content) > 300 else ''}\n\n"
+        "✍️ Отправьте новый текст:",
+        reply_markup=admin_kb.content_edit_kb(content_key),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("content_cancel:"))
+async def cancel_edit_content(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отменяет редактирование контента."""
+    await state.clear()
+    content_key = callback.data.split(":")[1]
+    
+    content_value = await db.get_content(content_key)
+    
+    if content_value:
+        content_names = {
+            "contacts": "📞 Контакты",
+            "about": "ℹ️ Обо мне",
+            "memo": "📋 Памятка для клиентов",
+        }
+        
+        preview_text = (
+            f"📄 <b>{content_names.get(content_key, content_key)}</b>\n\n"
+            f"{content_value}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "❌ Редактирование отменено."
+        )
+        
+        await callback.message.edit_text(
+            preview_text,
+            reply_markup=admin_kb.content_preview_kb(content_key),
+        )
+    else:
+        await callback.message.edit_text(
+            "❌ Редактирование отменено.",
+            reply_markup=admin_kb.content_menu_kb(),
+        )
+    
+    await callback.answer()
+
+
+@router.message(AdminStates.editing_content, F.text)
+async def save_content_text(message: Message, state: FSMContext) -> None:
+    """Сохраняет новый текст контента."""
+    from states.admin import AdminStates
+    
+    data = await state.get_data()
+    content_key = data.get("content_key")
+    
+    if not content_key:
+        await message.answer("❌ Ошибка: не выбран раздел для редактирования.")
+        await state.clear()
+        return
+    
+    new_text = message.text
+    
+    await db.update_content(
+        key=content_key,
+        value=new_text,
+        updated_by=f"admin_{message.from_user.id}",
+    )
+    
+    await state.clear()
+    
+    content_names = {
+        "contacts": "📞 Контакты",
+        "about": "ℹ️ Обо мне",
+        "memo": "📋 Памятка для клиентов",
+    }
+    
+    await message.answer(
+        f"✅ Контент раздела <b>{content_names.get(content_key, content_key)}</b> обновлен!\n\n"
+        "📄 <b>Новый текст:</b>\n"
+        f"{new_text[:200]}{'...' if len(new_text) > 200 else ''}",
+        reply_markup=admin_kb.admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data.startswith("content_reset:"))
+async def reset_content(callback: CallbackQuery) -> None:
+    """Сбрасывает контент к стандартному значению."""
+    content_key = callback.data.split(":")[1]
+    
+    # Стандартные тексты (только для сброса)
+    default_content = {
+        "contacts": (
+            "<b>📍 Мои контакты:</b>\n\n"
+            "📍 <b>Адрес:</b> г. Екатеринбург, ул. Куйбышева, д. 139\n"
+            "📱 <b>Телефон:</b> +7 (992) 331-99-36\n"
+            "💬 <b>Telegram:</b> @mc_yzbek\n\n"
+            "Пилим ногти, а не мужиков 💅"
+        ),
+        "about": (
+            "👋 <b>Всем привет! Я Катя</b>\n\n"
+            "Я мастер креативного маникюра в Екатеринбурге и хочу немножко рассказать о себе 🌟\n\n"
+            "✨ Я люблю создавать <b>объемные ногти</b> и <b>цветастые дизайны</b>\n"
+            "🎨 Моя сильная сторона — это <b>текстуры</b> и <b>дизайны с объемами</b>\n"
+            "💡 Обожаю работать с <b>мудбордами</b> и <b>инспо</b>\n\n"
+            "⚠️ Но если вдруг вы хотите рисунки на ногтях, то, к сожалению, это не про меня.\n"
+            "Из рисунков не умею делать что-то из ряда вон выходящее.\n\n"
+            "💖 Давайте создавать новое и красивое на ваших ручках!"
+        ),
+        "memo": (
+            "📋 <b>Памятка для клиентов</b> 🤍\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "🛡 <b>Безопасность и здоровье</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Перед визитом обязательно сообщи мастеру, если у тебя есть:\n\n"
+            "🦠 <b>Инфекции кожи и ногтей:</b>\n"
+            "грибок, бактериальные или вирусные заболевания (например, герпес)\n\n"
+            "⚠️ <b>Аллергии:</b>\n"
+            "особенно на материалы для наращивания, гель-лаки, акрил, "
+            "а также на анестезирующие средства\n\n"
+            "🩹 <b>Повреждения кожи:</b>\n"
+            "порезы, ссадины, воспаления, ожоги, псориаз, экзема, "
+            "бородавки в зоне маникюра\n\n"
+            "Эти сведения помогут мастеру выбрать безопасные материалы "
+            "и технику работы, а также предотвратить осложнения.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "📝 <b>Что важно сообщить при записи</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "📐 <b>Желаемая длина и форма ногтей:</b>\n"
+            "квадрат, миндаль, овал и др.\n\n"
+            "💅 <b>Тип покрытия:</b>\n"
+            "наращивание, укрепление на свои ноготки\n\n"
+            "🎨 <b>Тип дизайна:</b>\n"
+            "мудборд, инспо, фото референца (фотки с Pinterest)\n\n"
+            "🔬 <b>Состояние ногтей:</b>\n"
+            "ломкость, расслоение, тонкая ногтевая пластина\n\n"
+            "🤧 <b>Наличие аллергии:</b>\n"
+            "особенно на акрил, гель-лаки, праймеры\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <b>Дополнительные советы</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "✨ Регулярно ухаживай за кутикулой дома\n\n"
+            "🗣 Если чувствуешь дискомфорт во время процедуры — "
+            "сразу скажи мастеру!\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "💖 Все эти правила помогают оставаться в доверительных "
+            "отношениях с мастером и сохранить свою безопасность "
+            "и безопасность мастера!"
+        ),
+    }
+    
+    if content_key not in default_content:
+        await callback.answer("❌ Неизвестный раздел", show_alert=True)
+        return
+    
+    await db.update_content(
+        key=content_key,
+        value=default_content[content_key],
+        updated_by=f"admin_{callback.from_user.id} (reset)",
+    )
+    
+    content_names = {
+        "contacts": "📞 Контакты",
+        "about": "ℹ️ Обо мне",
+        "memo": "📋 Памятка для клиентов",
+    }
+    
+    await callback.answer("✅ Контент сброшен к стандартному значению!", show_alert=True)
+    
+    await callback.message.edit_text(
+        f"✅ Контент раздела <b>{content_names.get(content_key, content_key)}</b> сброшен к стандартному значению!",
+        reply_markup=admin_kb.content_preview_kb(content_key),
+    )

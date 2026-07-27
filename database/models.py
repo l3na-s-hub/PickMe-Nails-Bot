@@ -91,3 +91,13 @@ class AvailableSlot(Base):
 
     def __repr__(self) -> str:
         return f"<AvailableSlot date={self.slot_date} time={self.slot_time!r}>"
+
+
+class Content(Base):
+    __tablename__ = "content"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

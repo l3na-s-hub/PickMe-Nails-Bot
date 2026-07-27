@@ -53,6 +53,7 @@ async def main() -> None:
     dp.include_router(client.router)
 
     await init_db()
+    await db.init_default_content()
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_reminders, "interval", minutes=15, args=[bot])
