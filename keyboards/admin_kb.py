@@ -277,3 +277,59 @@ def get_days_calendar_kb(year: int, month: int, open_dates: set[date]) -> Inline
     
     builder.adjust(7)
     return builder.as_markup()
+
+
+def month_navigation_kb(year: int, month: int) -> InlineKeyboardMarkup:
+    """Навигация по месяцам."""
+    builder = InlineKeyboardBuilder()
+    
+    # Предыдущий месяц
+    prev_month = month - 1
+    prev_year = year
+    if prev_month == 0:
+        prev_month = 12
+        prev_year -= 1
+    
+    # Следующий месяц
+    next_month = month + 1
+    next_year = year
+    if next_month == 13:
+        next_month = 1
+        next_year += 1
+    
+    builder.button(text="◀️", callback_data=f"sched_month:{prev_year}-{prev_month:02d}")
+    builder.button(text=f"{RU_MONTHS[month]} {year}", callback_data="ignore")
+    builder.button(text="▶️", callback_data=f"sched_month:{next_year}-{next_month:02d}")
+    builder.adjust(3)
+    
+    return builder.as_markup()
+
+
+def get_days_calendar_kb(year: int, month: int, open_dates: set[date]) -> InlineKeyboardMarkup:
+    """Календарь дней месяца."""
+    builder = InlineKeyboardBuilder()
+    
+    # Шапка
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    for day in weekdays:
+        builder.add(InlineKeyboardButton(text=day, callback_data="ignore"))
+    
+    # Дни
+    cal = calendar.monthcalendar(year, month)
+    for week in cal:
+        for day in week:
+            if day == 0:
+                builder.add(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                current_date = date(year, month, day)
+                if current_date in open_dates:
+                    text = f"🟢 {day}"
+                else:
+                    text = f"🔴 {day}"
+                builder.add(InlineKeyboardButton(
+                    text=text, 
+                    callback_data=f"admin_pick_date:{year}-{month:02d}-{day:02d}"
+                ))
+    
+    builder.adjust(7)
+    return builder.as_markup()

@@ -368,11 +368,106 @@ async def _render_schedule_days(callback: CallbackQuery, year: int, month: int):
 
 @router.message(F.text == "🛠 Расписание записи")
 async def schedule_menu_start(message: Message) -> None:
-    # Вместо старого подменю сразу отправляем выбор месяца, но с другим префиксом
-    await message.answer(
-        "📅 Выберите месяц для настройки расписания:",
-        reply_markup=admin_kb.month_picker_kb(callback_prefix="sched_month")
+    """Сразу показывает календарь на текущий месяц."""
+    now = datetime.now()
+    year, month = now.year, now.month
+    
+    await show_schedule_calendar(message, year, month)
+
+
+async def show_schedule_calendar(target, year: int, month: int):
+    """Показывает календарь с навигацией."""
+    # Получаем открытые даты
+    open_dates = set()
+    async with db.async_session() as session:
+        from sqlalchemy import select
+        from database.models import AvailableSlot
+        query = select(AvailableSlot.slot_date).where(
+            AvailableSlot.slot_date >= date_type(year, month, 1),
+            AvailableSlot.slot_date <= date_type(year, month, calendar.monthrange(year, month)[1])
+        ).distinct()
+        result = await session.execute(query)
+        open_dates = set(result.scalars().all())
+    
+    # Создаем календарь в одном билдере
+    builder = InlineKeyboardBuilder()
+    
+    # Шапка: дни недели
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    for day in weekdays:
+        builder.add(InlineKeyboardButton(text=day, callback_data="ignore"))
+    
+    # Дни месяца
+    cal = calendar.monthcalendar(year, month)
+    for week in cal:
+        for day in week:
+            if day == 0:
+                builder.add(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                current_date = date_type(year, month, day)
+                if current_date in open_dates:
+                    text = f"🟢 {day}"
+                else:
+                    text = f"🔴 {day}"
+                builder.add(InlineKeyboardButton(
+                    text=text, 
+                    callback_data=f"admin_pick_date:{year}-{month:02d}-{day:02d}"
+                ))
+    
+    builder.adjust(7)  # 7 колонок для дней недели
+    
+    # Навигация по месяцам (отдельный ряд)
+    prev_month = month - 1
+    prev_year = year
+    if prev_month == 0:
+        prev_month = 12
+        prev_year -= 1
+    
+    next_month = month + 1
+    next_year = year
+    if next_month == 13:
+        next_month = 1
+        next_year += 1
+    
+    builder.row(
+        InlineKeyboardButton(text="◀️", callback_data=f"sched_month:{prev_year}-{prev_month:02d}"),
+        InlineKeyboardButton(text=f"{admin_kb.RU_MONTHS[month]} {year}", callback_data="ignore"),
+        InlineKeyboardButton(text="▶️", callback_data=f"sched_month:{next_year}-{next_month:02d}"),
+        width=3
     )
+    
+    # Определяем тип target и отправляем сообщение
+    from aiogram.types import Message, CallbackQuery
+    
+    text = (
+        f"📅 <b>Расписание записи</b>\n\n"
+        f"📍 {admin_kb.RU_MONTHS[month]} {year}\n\n"
+        "🟢 — день открыт для записи\n"
+        "🔴 — день закрыт\n\n"
+        "Нажмите на день для управления слотами"
+    )
+    
+    if isinstance(target, CallbackQuery):
+        # Это CallbackQuery - редактируем существующее сообщение
+        await target.message.edit_text(
+            text,
+            reply_markup=builder.as_markup()
+        )
+        await target.answer()
+    else:
+        # Это Message - отправляем новое сообщение
+        await target.answer(
+            text,
+            reply_markup=builder.as_markup()
+        )
+
+@router.callback_query(F.data.startswith("sched_month:"))
+async def change_schedule_month(callback: CallbackQuery) -> None:
+    """Переключение месяца (◀️ ▶️)."""
+    year_str, month_str = callback.data.split(":")[1].split("-")
+    year, month = int(year_str), int(month_str)
+    
+    await show_schedule_calendar(callback, year, month)
 
 
 # 2. Хэндлер, который срабатывает при выборе месяца из меню
