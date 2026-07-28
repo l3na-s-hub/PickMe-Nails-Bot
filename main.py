@@ -56,7 +56,7 @@ async def main() -> None:
     await db.init_default_content()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_reminders, "interval", minutes=15, args=[bot])
+    scheduler.add_job(check_reminders, "interval", minutes=60, args=[bot])
     scheduler.start()
 
     await bot.delete_webhook(drop_pending_updates=True)
